@@ -18,12 +18,11 @@
   ],
   "homepage": "https://singitai.app/developers/",
   "bugs": {
-    "url": "https://github.com/bubon-ik/SingItAI/issues"
+    "url": "https://github.com/SingItAi/singit-js/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bubon-ik/SingItAI.git",
-    "directory": "sdk/typescript"
+    "url": "git+https://github.com/SingItAi/singit-js.git"
   },
   "license": "MIT",
   "author": "SingIt <contact@singitai.app>",
