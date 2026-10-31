@@ -1,6 +1,22 @@
+<div align="center">
+
 # @singitai/sdk
 
-Pay [SingIt Ask](../../singit-ask) over x402 from your own code or agent, with spend limits that are
+**Pay SingIt Ask over x402 from your own code, with spend limits checked in your process before anything is signed.**
+
+[![npm](https://img.shields.io/npm/v/@singitai/sdk.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/@singitai/sdk)
+[![CI](https://img.shields.io/github/actions/workflow/status/SingItAi/singit-js/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/SingItAi/singit-js/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](package.json)
+[![x402](https://img.shields.io/badge/x402-USDC-purple?style=flat-square)](https://x402.org)
+[![Base](https://img.shields.io/badge/Base-USDC-0052FF?style=flat-square)](https://base.org)
+[![Solana](https://img.shields.io/badge/Solana-USDC-9945FF?style=flat-square)](https://solana.com)
+
+[Docs](https://singitai.app/developers/) · [Quickstart](https://singitai.app/docs/quickstart/) · [Python SDK](https://github.com/SingItAi/singit-python) · [MCP server](https://github.com/SingItAi/singit-mcp) · [Examples](https://github.com/SingItAi/singit-examples)
+
+</div>
+
+Pay [SingIt Ask](https://github.com/SingItAi/SingItAI/tree/main/singit-ask) over x402 from your own code or agent, with spend limits that are
 checked **in your process before anything is signed**: a ceiling per call and a ceiling per day.
 USDC on Base or Solana, no account and no API key.
 
@@ -81,7 +97,7 @@ const singit = new SingIt({
 ## Guards
 
 Every call pins the merchant's offer before signing anything, the same way
-`singit-ask/src/metered-buyer.mjs` and `solana-buyer.mjs` do for the service's own buyers:
+`singit-ask/src/metered-buyer.mjs` and `solana-buyer.mjs` in the [main repository](https://github.com/SingItAi/SingItAI/tree/main/singit-ask/src) do for the service's own buyers:
 
 - **Network/asset/payTo.** The offer's `network`, `asset` and `payTo` must exactly match this
   `SingIt` instance's configured network (the built-in pin for `base`/`solana`, or the `payTo` you
@@ -98,7 +114,7 @@ Every call pins the merchant's offer before signing anything, the same way
   the request; a mismatch is treated as unresolved rather than returned as a success.
 
 This SDK does **not** wait for on-chain confirmation of the settlement transaction (unlike
-`metered-buyer.mjs`'s `validateTransfer`/`validateSolanaSettlement`); `payment.txHash` is returned
+`metered-buyer.mjs`'s `validateTransfer`/`validateSolanaSettlement` in the main repository); `payment.txHash` is returned
 as reported by the merchant's `payment-response` header for the caller to check independently if
 needed.
 
@@ -112,18 +128,18 @@ needed.
   `scheme: "upto"` (default) pays only the actual answer cost, up to the offered ceiling;
   `"exact"` pays that ceiling flat. `route: "completions"` (default) calls
   `POST /v1/chat/completions`, live today. `route: "per-model"` calls `POST /v1/chat/{model}`
-  (SI-62), live; `model` is then required.
+ , live; `model` is then required.
 - `walletReport(address, { days, apiKey })` — `GET {appBaseUrl}/v1/wallet/{address}/reconciliation`
-  (SI-67). The report is private: `apiKey` must be a SingIt API key of the account that signs in
+ . The report is private: `apiKey` must be a SingIt API key of the account that signs in
   with `address`; without one the server answers 401, and the SDK says so.
-- `pricing()` — `GET {baseUrl}/pricing.json` (SI-68), live.
+- `pricing()` — `GET {baseUrl}/pricing.json`, live.
 - `paidFetch({ scheme })` — a guarded `fetch` for frameworks, see above.
 - `allowance(address, options)` — `(await walletReport(address, options)).allowance`: the
   on-chain spending limit set in the SingIt app, with what has been spent/remains today.
 
 ## What isn't supported yet
 
-- The wallet report (SI-67) is private and needs a SingIt API key of the account that signs in
+- The wallet report is private and needs a SingIt API key of the account that signs in
   with the wallet; without one the server answers 401 and the SDK says so.
 - The daily counter is in memory, per `SingIt` instance and per UTC day. A new process or a new
   instance starts at zero, so build one instance per agent and keep it for the life of the process.
@@ -134,3 +150,9 @@ needed.
   funded `@solana/kit` signer and a live cluster RPC, out of scope for an offline test.
 - `base-sepolia` is useful for integration-testing against a merchant you control; SingIt itself
   has no testnet deployment to pay.
+
+## Contributing and security
+
+See [CONTRIBUTING.md](https://github.com/SingItAi/singit-js/blob/main/CONTRIBUTING.md). Security problems: email contact@singitai.app, not a public
+issue ([SECURITY.md](https://github.com/SingItAi/singit-js/blob/main/SECURITY.md)). MIT licensed. The Python equivalent is
+[`singit`](https://github.com/SingItAi/singit-python).
