@@ -153,6 +153,6 @@ needed.
 
 ## Contributing and security
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Security problems: email contact@singitai.app, not a public
-issue ([SECURITY.md](SECURITY.md)). MIT licensed. The Python equivalent is
+See [CONTRIBUTING.md](https://github.com/SingItAi/singit-js/blob/main/CONTRIBUTING.md). Security problems: email contact@singitai.app, not a public
+issue ([SECURITY.md](https://github.com/SingItAi/singit-js/blob/main/SECURITY.md)). MIT licensed. The Python equivalent is
 [`singit`](https://github.com/SingItAi/singit-python).
