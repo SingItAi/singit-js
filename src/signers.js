@@ -20,3 +20,13 @@ export function buildEvmSigner({ evmPrivateKey, evmAccount, viemChain, rpcUrl })
     readContract: client.readContract.bind(client),
   };
 }
+
+// Address discovery is local and does not create an RPC client or sign anything.
+export function payerAddress({ evmPrivateKey, evmAccount, solanaSigner, family }) {
+  try {
+    const address = family === "evm"
+      ? (evmAccount ?? (evmPrivateKey ? privateKeyToAccount(evmPrivateKey) : null))?.address
+      : solanaSigner?.address;
+    return typeof address === "string" && address ? (family === "evm" ? address.toLowerCase() : address) : "unknown";
+  } catch { return "unknown"; }
+}

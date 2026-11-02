@@ -19,7 +19,7 @@ const OTHER_ADDRESS = addr("dead");
 const privateKey = generatePrivateKey();
 
 function makeSingIt({ merchant, maxPerCallUsd = 1, maxPerDayUsd = 10, payTo = PAY_TO }) {
-  return new SingIt({ evmPrivateKey: privateKey, network: "base-sepolia", baseUrl: merchant.url,
+  return new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base-sepolia", baseUrl: merchant.url,
     payTo, maxPerCallUsd, maxPerDayUsd });
 }
 
@@ -116,7 +116,7 @@ test("chat() returns payment: null when the merchant answers without a 402 (e.g.
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   try {
-    const singit = new SingIt({ evmPrivateKey: privateKey, network: "base-sepolia", baseUrl: url,
+    const singit = new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base-sepolia", baseUrl: url,
       payTo: PAY_TO, maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
     const result = await singit.chat({ messages: [{ role: "user", content: "Hello" }], model: "free/demo" });
     assert.equal(result.payment, null);
@@ -127,12 +127,12 @@ test("chat() returns payment: null when the merchant answers without a 402 (e.g.
 });
 
 test("SingIt refuses to construct for base-sepolia without an explicit payTo", () => {
-  assert.throws(() => new SingIt({ evmPrivateKey: privateKey, network: "base-sepolia", maxPerCallUsd: 0.01, maxPerDayUsd: 1 }),
+  assert.throws(() => new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base-sepolia", maxPerCallUsd: 0.01, maxPerDayUsd: 1 }),
     /no deployment on base-sepolia/);
 });
 
 test("SingIt refuses to construct without spending ceilings", () => {
-  assert.throws(() => new SingIt({ evmPrivateKey: privateKey, network: "base", maxPerCallUsd: 0.01 }),
+  assert.throws(() => new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base", maxPerCallUsd: 0.01 }),
     /never pays without a ceiling/);
 });
 

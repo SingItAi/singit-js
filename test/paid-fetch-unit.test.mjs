@@ -9,7 +9,7 @@ function setup(receiptOverrides = {}, { scheme = "exact", billed = "4000" } = {}
   const payee = privateKeyToAccount(generatePrivateKey());
   const url = "http://localhost/v1/chat/completions";
   let sent = 0;
-  const client = new SingIt({
+  const client = new SingIt({ spendLog: false,
     evmAccount: payer, network: "base-sepolia", baseUrl: "http://localhost",
     payTo: payee.address, maxPerCallUsd: 0.004, maxPerDayUsd: 0.006,
     fetchImpl: async (input, init) => {

@@ -17,7 +17,7 @@ const OTHER_ADDRESS = addr("dead");
 const privateKey = generatePrivateKey();
 
 const make = (merchant, { maxPerCallUsd = 0.01, maxPerDayUsd = 1, payTo = PAY_TO } = {}) =>
-  new SingIt({ evmPrivateKey: privateKey, network: "base-sepolia", baseUrl: merchant.url, payTo, maxPerCallUsd, maxPerDayUsd });
+  new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base-sepolia", baseUrl: merchant.url, payTo, maxPerCallUsd, maxPerDayUsd });
 const post = (singitFetch, url) => singitFetch(`${url}/v1/chat/completions`, {
   method: "POST", headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ messages: [{ role: "user", content: "Hello" }] }),
@@ -117,7 +117,7 @@ test("paidFetch() treats a paid answer without a billing invoice as unresolved a
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   try {
-    const singit = new SingIt({ evmPrivateKey: privateKey, network: "base-sepolia", baseUrl: url, payTo: PAY_TO,
+    const singit = new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base-sepolia", baseUrl: url, payTo: PAY_TO,
       maxPerCallUsd: 0.01, maxPerDayUsd: 0.006 });
     const pay = singit.paidFetch();
     await assert.rejects(post(pay, url), /invoice does not match/);
@@ -129,7 +129,7 @@ test("paidFetch() treats a paid answer without a billing invoice as unresolved a
 });
 
 test("paidFetch() rejects an unknown scheme", () => {
-  const singit = new SingIt({ evmPrivateKey: privateKey, network: "base-sepolia", payTo: PAY_TO, maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
+  const singit = new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base-sepolia", payTo: PAY_TO, maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
   assert.throws(() => singit.paidFetch({ scheme: "other" }), /scheme must be/);
 });
 
