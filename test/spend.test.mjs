@@ -19,6 +19,18 @@ function child(args, env = {}) {
     p.on('error', reject); p.on('close', code => resolve({ code, output }));
   });
 }
+test('a checksummed and a lowercase spelling of one EVM address share one allowance; Solana keeps its case', t => {
+  const file = temp(t), limiter = new PersistentDailyLimiter('100', { file });
+  const mixed = '0xAbCdEf0123456789aBcDeF0123456789AbCdEf01';
+  const a = limiter.reserve('60', { ...meta, payer: mixed });
+  assert.throws(() => limiter.reserve('50', { ...meta, payer: mixed.toLowerCase() }), SingItPaymentError);
+  assert.equal(new PersistentDailyLimiter('100', { file, payer: mixed }).remainingAtomic(), 40n);
+  a();
+  const sol = 'So11111111111111111111111111111111111111112';
+  const s1 = limiter.reserve('60', { ...meta, network: 'solana', payer: sol });
+  limiter.reserve('60', { ...meta, network: 'solana', payer: sol.toLowerCase() });
+  s1();
+});
 test('persistent reservations settle, release, survive restart, and separate scopes', t => {
   const file = temp(t), limiter = new PersistentDailyLimiter('100', { file });
   const a = limiter.reserve('60', meta);

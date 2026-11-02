@@ -94,9 +94,12 @@ function syncDirectory(dir) {
   finally { if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* best effort */ } } }
 }
 
+// EVM addresses are case-insensitive: one wallet must share one allowance however a caller spells it. Solana keeps its case.
+const scopePayer = (network, payer) => (network !== 'solana' && typeof payer === 'string' && /^0x[0-9a-fA-F]{40}$/.test(payer) ? payer.toLowerCase() : payer);
+
 export class PersistentDailyLimiter {
   constructor(capAtomic, { file = defaultSpendPath(), now = () => new Date(), network = 'base', payer = 'unknown' } = {}) {
-    this.capAtomic = BigInt(capAtomic); this.file = file; this.now = now; this.scope = { network, payer };
+    this.capAtomic = BigInt(capAtomic); this.file = file; this.now = now; this.scope = { network, payer: scopePayer(network, payer) };
     try {
       const created = fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
       const fd = fs.openSync(file, 'a+', 0o600);
@@ -116,7 +119,7 @@ export class PersistentDailyLimiter {
     }
   }
   _spent(day, scope) {
-    return readSpend(this._canonicalFile).payments.filter(p => p.day === day && p.network === scope.network && p.payer === scope.payer)
+    return readSpend(this._canonicalFile).payments.filter(p => p.day === day && p.network === scope.network && scopePayer(p.network, p.payer) === scopePayer(scope.network, scope.payer))
       .reduce((n, p) => n + BigInt(p.spentAtomic), 0n);
   }
   remainingAtomic() {
@@ -184,7 +187,7 @@ export class PersistentDailyLimiter {
     try {
       const t = new Date(this.now()).toISOString();
       const day = t.slice(0, 10);
-      const scope = { network: meta.network, payer: meta.payer };
+      const scope = { network: meta.network, payer: scopePayer(meta.network, meta.payer) };
       const spent = this._spent(day, scope), amount = BigInt(amountAtomic);
       if (amount < 0n) throw new SingItPaymentError('A reserved amount cannot be negative.');
       if (spent + amount > this.capAtomic) throw new SingItPaymentError(`Daily spend cap reached: ${spent} already spent today, ${amount} more would exceed ${this.capAtomic} micro-USDC.`);
