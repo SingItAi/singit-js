@@ -296,3 +296,14 @@ test('a reserved amount is stored canonically and a negative one is refused', (t
   assert.throws(() => limiter.reserve('060', meta), /Daily spend cap reached/);
   assert.throws(() => limiter.reserve('-1', meta), /cannot be negative/);
 });
+
+test('release and settle amounts are stored canonically', (t) => {
+  const file = temp(t);
+  const meta = { network: 'base', payer: '0xabc', scheme: 'exact', resource: 'https://ask.example/v1/chat' };
+  const limiter = new PersistentDailyLimiter('100', { file, network: 'base', payer: '0xabc' });
+  limiter.reserve('060', meta)();
+  assert.equal(limiter.remainingAtomic(), 100n);
+  const release = limiter.reserve('070', meta);
+  limiter.settle(release, '010', '070');
+  assert.equal(limiter.remainingAtomic(), 90n);
+});

@@ -199,7 +199,7 @@ export class PersistentDailyLimiter {
     const finish = (event, amount, tx) => {
       if (done) return; done = true;
       let finishToken;
-      try { finishToken = this._acquireLock(); this._append({ v: 1, t: new Date(this.now()).toISOString(), day: row.day, id: row.id, event, network: row.network, payer: row.payer, amountAtomic: String(amount), ...(typeof tx === 'string' ? { tx } : {}) }); }
+      try { finishToken = this._acquireLock(); this._append({ v: 1, t: new Date(this.now()).toISOString(), day: row.day, id: row.id, event, network: row.network, payer: row.payer, amountAtomic: String(BigInt(amount)), ...(typeof tx === 'string' ? { tx } : {}) }); }
       catch { console.warn(`Could not append ${event} to spend log ${this.file}; reservation remains counted at its ceiling.`); }
       finally { if (finishToken) releaseLock(lock, finishToken); }
     };
