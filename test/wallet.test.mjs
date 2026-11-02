@@ -27,7 +27,7 @@ test("walletReport() parses a reconciliation document and allowance() reads its 
     res.end(JSON.stringify({ address, allowance: { limitUsd: 5, spentTodayUsd: 1.2, remainingUsd: 3.8 }, entries: [] }));
   });
   try {
-    const singit = new SingIt({ evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
+    const singit = new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
       appBaseUrl: app.url, maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
     const report = await singit.walletReport(address, { days: 7, apiKey: "sk_singit_test" });
     assert.equal(report.address, address);
@@ -42,7 +42,7 @@ test("walletReport() parses a reconciliation document and allowance() reads its 
 test("walletReport() says the report is private on a 401", async () => {
   const app = await startJsonServer((req, res) => { res.writeHead(401).end(); });
   try {
-    const singit = new SingIt({ evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
+    const singit = new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
       appBaseUrl: app.url, maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
     await assert.rejects(singit.walletReport(addr("f00d")), /private \(HTTP 401\).*apiKey/);
   } finally {
@@ -53,7 +53,7 @@ test("walletReport() says the report is private on a 401", async () => {
 test("walletReport() reports clearly when the reconciliation endpoint is unavailable (404)", async () => {
   const app = await startJsonServer((req, res) => { res.writeHead(404).end(); });
   try {
-    const singit = new SingIt({ evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
+    const singit = new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
       appBaseUrl: app.url, maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
     await assert.rejects(singit.walletReport(addr("f00d")), /HTTP 404/);
   } finally {
@@ -68,7 +68,7 @@ test("pricing() parses pricing.json", async () => {
     res.end(JSON.stringify({ model: "deepseek-v4.1-flash", maxChargeAtomic: "3000" }));
   });
   try {
-    const singit = new SingIt({ evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
+    const singit = new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
       baseUrl: ask.url, maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
     const pricing = await singit.pricing();
     assert.equal(pricing.model, "deepseek-v4.1-flash");
@@ -80,7 +80,7 @@ test("pricing() parses pricing.json", async () => {
 test("pricing() reports clearly when pricing.json is unavailable (404)", async () => {
   const ask = await startJsonServer((req, res) => { res.writeHead(404).end(); });
   try {
-    const singit = new SingIt({ evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
+    const singit = new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base", payTo: PAY_TO,
       baseUrl: ask.url, maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
     await assert.rejects(singit.pricing(), /HTTP 404/);
   } finally {
@@ -89,6 +89,6 @@ test("pricing() reports clearly when pricing.json is unavailable (404)", async (
 });
 
 test("SingIt is constructed from a plain evmPrivateKey in three lines", () => {
-  const singit = new SingIt({ evmPrivateKey: privateKey, network: "base", maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
+  const singit = new SingIt({ spendLog: false, evmPrivateKey: privateKey, network: "base", maxPerCallUsd: 0.01, maxPerDayUsd: 1 });
   assert.ok(singit instanceof SingIt);
 });

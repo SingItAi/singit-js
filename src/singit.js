@@ -1,5 +1,7 @@
 import { NETWORKS, DEFAULT_BASE_URL, DEFAULT_APP_BASE_URL, ROUTE, perModelRoute } from "./pins.js";
 import { SingItPaymentError, selectOffer, decodeHeader, DailyLimiter, usdToAtomic, isAtomicAmount } from "./guards.js";
+import { PersistentDailyLimiter } from "./spend.js";
+import { payerAddress } from "./signers.js";
 import { buildEvmSigner } from "./signers.js";
 
 function requiredModel(model) {
@@ -44,7 +46,7 @@ export class SingIt {
   constructor(options = {}) {
     const {
       network, baseUrl = DEFAULT_BASE_URL, appBaseUrl = DEFAULT_APP_BASE_URL, payTo, rpcUrl,
-      evmPrivateKey, evmAccount, solanaSigner, maxPerCallUsd, maxPerDayUsd, fetchImpl = fetch,
+      evmPrivateKey, evmAccount, solanaSigner, maxPerCallUsd, maxPerDayUsd, fetchImpl = fetch, spendLog,
     } = options;
     const pin = NETWORKS[network];
     if (!pin) throw new SingItPaymentError(`Unknown network "${network}". Use "base", "base-sepolia" or "solana".`);
@@ -61,7 +63,11 @@ export class SingIt {
     this.payTo = payTo ?? pin.payTo;
     this.rpcUrl = rpcUrl ?? pin.defaultRpcUrl;
     this.maxPerCallAtomic = usdToAtomic(maxPerCallUsd);
-    this.limiter = new DailyLimiter(usdToAtomic(maxPerDayUsd));
+    this.limiter = spendLog === false ? new DailyLimiter(usdToAtomic(maxPerDayUsd))
+      : new PersistentDailyLimiter(usdToAtomic(maxPerDayUsd), {
+        ...(typeof spendLog === "string" ? { file: spendLog } : {}),
+        network, payer: payerAddress({ evmPrivateKey, evmAccount, solanaSigner, family: pin.family }),
+      });
     this.fetchImpl = fetchImpl;
     this._evm = { evmPrivateKey, evmAccount };
     this._solanaSigner = solanaSigner;
@@ -136,7 +142,8 @@ export class SingIt {
       asset: this.pin.asset, payTo: this.payTo, maxCapAtomic: this.maxPerCallAtomic, resourceUrl: url,
     });
 
-    const release = this.limiter.reserve(offer.amount);
+    const payer = payerAddress({ ...this._evm, solanaSigner: this._solanaSigner, family: this.pin.family });
+    const release = this.limiter.reserve(offer.amount, { network: this.network, payer, scheme, resource: url });
     let payload;
     try {
       payload = await this._sign(scheme, offer, challenge.extensions);
@@ -173,7 +180,7 @@ export class SingIt {
         + "(its ceiling stays counted against the daily cap).");
     }
     const receipt = this._checkReceipt(response, payload);
-    if (scheme === "upto") this.limiter.settle(release, totalAtomic, offer.amount);
+    this.limiter.settle(release, totalAtomic, offer.amount, receipt?.transaction);
     return { response, offer, payload, text, receipt };
   }
 

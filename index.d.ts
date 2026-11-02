@@ -25,8 +25,10 @@ export interface SingItOptions {
   rpcUrl?: string;
   /** Hard ceiling per chat() call, in whole USD (e.g. 0.01). Required. */
   maxPerCallUsd: number;
-  /** Hard ceiling per UTC day across chat() and paidFetch() calls on this instance, in whole USD. Required, in-memory only. */
+  /** Hard ceiling per UTC day and wallet + network across processes using the same local log. Required. */
   maxPerDayUsd: number;
+  /** Default/true: persistent local log. String: custom file. False: in-memory, resets on restart. */
+  spendLog?: boolean | string;
   fetchImpl?: typeof fetch;
 }
 
@@ -79,3 +81,52 @@ export declare class SingIt {
   /** walletReport(address, options).allowance */
   allowance(address: string, options?: { days?: number; apiKey?: string }): Promise<any>;
 }
+
+export interface SpendMeta {
+  network: SingItNetwork;
+  payer: string;
+  scheme: SingItScheme;
+  resource: string;
+}
+export interface SpendPayment extends SpendMeta {
+  v: 1;
+  t: string;
+  day: string;
+  id: string;
+  event: "reserve";
+  pid: number;
+  amountAtomic: string;
+  ceilingAtomic: string;
+  spentAtomic: string;
+  status: "settled" | "unresolved" | "released";
+  tx: string;
+}
+export interface SpendDay {
+  day: string;
+  network: SingItNetwork;
+  payer: string;
+  payments: number;
+  spentAtomic: string;
+  spentUsd: string;
+  settled: number;
+  unresolved: number;
+  released: number;
+}
+export interface SpendRelease {
+  (): void;
+  day: string;
+}
+export declare class DailyLimiter {
+  constructor(capAtomic: string | bigint);
+  remainingAtomic(): bigint;
+  reserve(amount: string | bigint): SpendRelease;
+  settle(release: SpendRelease, actual: string | bigint | undefined, worstCase: string | bigint): void;
+}
+export declare class PersistentDailyLimiter {
+  constructor(capAtomic: string | bigint, options?: { file?: string; now?: () => Date; network?: SingItNetwork; payer?: string });
+  remainingAtomic(): bigint;
+  reserve(amount: string | bigint, meta: SpendMeta): SpendRelease;
+  settle(release: SpendRelease, actual: string | bigint | undefined, worstCase: string | bigint, tx?: string): void;
+}
+export declare function readSpend(file?: string): { payments: SpendPayment[]; skippedLines: number };
+export declare function spendSummary(options?: { file?: string; days?: number; now?: () => Date }): { file: string; days: SpendDay[]; skippedLines: number };

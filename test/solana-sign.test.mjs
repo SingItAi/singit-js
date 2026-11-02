@@ -93,7 +93,7 @@ for (const scheme of ["upto", "exact"]) {
     let requests = 0;
     let payment;
     const billed = scheme === "upto" ? "1500" : offer.amount;
-    const client = new SingIt({
+    const client = new SingIt({ spendLog: false,
       network: "solana", solanaSigner: signer, rpcUrl: rpc.url, baseUrl: rpc.url,
       maxPerCallUsd: 0.003, maxPerDayUsd: 0.01,
       fetchImpl: async (url, init) => {
