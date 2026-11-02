@@ -156,7 +156,7 @@ or incomplete lines are skipped and reported. `readSpend(file)` returns payment 
 `skippedLines`; `spendSummary({file, days})` returns the same grouped data as the JSON command.
 The file is read on every reservation and remaining/summary query. It grows by two short lines
 per completed payment; pruning is not included. Reservations use a shared exclusive sibling
-`.lock` file (5-second timeout, locks older than 30 seconds reclaimed). Use local POSIX storage;
+`.lock` file (5-second timeout; a lock is reclaimed only when it is older than 30 seconds and its owner process on this host is gone, otherwise the reservation is refused with a message naming the lock file). Use local POSIX storage;
 network filesystems are not supported.
 
 **What this is not:** this is a local client-side log, not on-chain enforcement, a ledger, or
