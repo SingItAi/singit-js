@@ -39,6 +39,33 @@ test('persistent reservations settle, release, survive restart, and separate sco
     assert.equal(fs.statSync(path.dirname(file)).mode & 0o777, 0o700);
   }
 });
+test('symlink and target share a lock and daily spending', t => {
+  const file = temp(t);
+  const target = new PersistentDailyLimiter('100', { file, ...meta });
+  const alias = path.join(path.dirname(file), 'alias.jsonl');
+  try { fs.symlinkSync(file, alias); }
+  catch (error) {
+    if (!['EPERM', 'EACCES', 'ENOSYS', 'ENOTSUP', 'EINVAL'].includes(error.code)) throw error;
+    t.skip(`Symlinks unavailable: ${error.code}`); return;
+  }
+  const linked = new PersistentDailyLimiter('100', { file: alias, ...meta });
+  assert.equal(linked.file, alias);
+  assert.equal(linked._canonicalFile, target._canonicalFile);
+  const lock = `${linked._canonicalFile}.lock`, token = linked._acquireLock();
+  try {
+    const now = Date.now(); let calls = 0;
+    t.mock.method(Date, 'now', () => now + (calls++ ? 6000 : 0));
+    assert.throws(() => target.reserve('10', meta), /Could not lock the spend log/);
+    assert.equal(fs.readFileSync(lock, 'utf8'), token);
+  } finally { t.mock.restoreAll(); linked._releaseLock(lock, token); }
+  linked.reserve('60', meta);
+  assert.equal(target.remainingAtomic(), 40n);
+  target.reserve('30', meta);
+  assert.equal(linked.remainingAtomic(), 10n);
+  assert.throws(() => linked.reserve('11', meta), /Daily spend cap reached/);
+  assert.throws(() => target.reserve('11', meta), /Daily spend cap reached/);
+  assert.equal(spendSummary({ file: alias }).file, alias);
+});
 test('UTC rollover preserves original reservation day', t => {
   const file = temp(t); let now = new Date('2026-11-01T23:59:59Z');
   const l = new PersistentDailyLimiter('100', { file, now: () => now });

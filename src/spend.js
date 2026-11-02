@@ -109,13 +109,14 @@ export class PersistentDailyLimiter {
           directory = path.dirname(directory);
         }
       }
-      fs.readFileSync(file);
+      this._canonicalFile = fs.realpathSync(file);
+      fs.readFileSync(this._canonicalFile);
     } catch {
       throw new SingItPaymentError(`Could not prepare spend log ${file}; pass spendLog:false (in-memory, resets on restart) or a writable path.`);
     }
   }
   _spent(day, scope) {
-    return readSpend(this.file).payments.filter(p => p.day === day && p.network === scope.network && p.payer === scope.payer)
+    return readSpend(this._canonicalFile).payments.filter(p => p.day === day && p.network === scope.network && p.payer === scope.payer)
       .reduce((n, p) => n + BigInt(p.spentAtomic), 0n);
   }
   remainingAtomic() {
@@ -129,7 +130,7 @@ export class PersistentDailyLimiter {
     try {
       const line = JSON.stringify(row) + '\n';
       if (Buffer.byteLength(line) >= 4095) throw Error('spend record too large');
-      fd = fs.openSync(this.file, 'a+', 0o600);
+      fd = fs.openSync(this._canonicalFile, 'a+', 0o600);
       size = fs.fstatSync(fd).size;
       const last = Buffer.alloc(1);
       if (size) fs.readSync(fd, last, 0, 1, size - 1);
@@ -162,7 +163,7 @@ export class PersistentDailyLimiter {
     finally { releaseLock(guard, token); }
   }
   _acquireLock() {
-    const lock = `${this.file}.lock`, token = lockToken();
+    const lock = `${this._canonicalFile}.lock`, token = lockToken();
     const deadline = Date.now() + 5000;
     for (;;) {
       try { createLock(lock, token); return token; }
@@ -178,7 +179,7 @@ export class PersistentDailyLimiter {
     }
   }
   reserve(amountAtomic, meta = this.scope) {
-    const lock = `${this.file}.lock`, token = this._acquireLock();
+    const lock = `${this._canonicalFile}.lock`, token = this._acquireLock();
     let row;
     try {
       const t = new Date(this.now()).toISOString();
