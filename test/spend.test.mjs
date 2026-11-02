@@ -286,3 +286,13 @@ for (const code of ['EPERM', 'EACCES', 'EINVAL']) {
     assert.equal(fs.readFileSync(lock, 'utf8'), token);
   });
 }
+
+test('a reserved amount is stored canonically and a negative one is refused', (t) => {
+  const file = temp(t);
+  const meta = { network: 'base', payer: '0xabc', scheme: 'exact', resource: 'https://ask.example/v1/chat' };
+  const limiter = new PersistentDailyLimiter('100', { file, network: 'base', payer: '0xabc' });
+  limiter.reserve('060', meta);
+  assert.equal(limiter.remainingAtomic(), 40n);
+  assert.throws(() => limiter.reserve('060', meta), /Daily spend cap reached/);
+  assert.throws(() => limiter.reserve('-1', meta), /cannot be negative/);
+});

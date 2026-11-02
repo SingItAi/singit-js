@@ -186,6 +186,7 @@ export class PersistentDailyLimiter {
       const day = t.slice(0, 10);
       const scope = { network: meta.network, payer: meta.payer };
       const spent = this._spent(day, scope), amount = BigInt(amountAtomic);
+      if (amount < 0n) throw new SingItPaymentError('A reserved amount cannot be negative.');
       if (spent + amount > this.capAtomic) throw new SingItPaymentError(`Daily spend cap reached: ${spent} already spent today, ${amount} more would exceed ${this.capAtomic} micro-USDC.`);
       const url = new URL(meta.resource);
       row = { v: 1, t, day, id: randomBytes(8).toString('hex'), event: 'reserve', ...scope, amountAtomic: String(amount), scheme: meta.scheme, resource: url.origin + url.pathname, pid: process.pid };
