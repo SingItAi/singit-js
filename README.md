@@ -145,9 +145,8 @@ needed.
   instance starts at zero, so build one instance per agent and keep it for the life of the process.
 - `paidFetch()` reads the billed amount from the JSON answer: streaming answers are not supported.
 - No on-chain confirmation of the settlement transaction (see "Guards" above).
-- Solana signing is implemented (via `@x402/svm`'s client schemes) but is exercised in this SDK's
-  own test suite only at the offer-selection/guard level, not with a real signer — that needs a
-  funded `@solana/kit` signer and a live cluster RPC, out of scope for an offline test.
+- Solana upto/exact signing is tested offline with a real `@solana/kit` signer and a local mock
+  RPC. Live settlement with funded accounts is not covered by the test suite.
 - `base-sepolia` is useful for integration-testing against a merchant you control; SingIt itself
   has no testnet deployment to pay.
 
