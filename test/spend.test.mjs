@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { generatePrivateKey } from 'viem/accounts';
 import { PersistentDailyLimiter, readSpend, spendSummary, SingIt } from '../src/index.js';
+import { SingItPaymentError } from '../src/guards.js';
 import { spendMain } from '../src/spend-cli.js';
 import { main } from '../src/cli.js';
 import { startMerchant, exactOffer } from './helpers/merchant.mjs';
@@ -64,10 +65,10 @@ test('construction fails clearly and disabled persistence touches no file', t =>
 });
 test('stale locks recover and lock symlinks are never followed', t => {
   const file = temp(t), l = new PersistentDailyLimiter('100', { file });
-  const target = path.join(path.dirname(file), 'target'); fs.writeFileSync(target, 'untouched');
+  const target = path.join(path.dirname(file), 'target'); fs.writeFileSync(target, '');
   fs.symlinkSync(target, file + '.lock');
   const old = new Date(Date.now() - 31000); fs.lutimesSync(file + '.lock', old, old);
-  l.reserve('10', meta); assert.equal(fs.readFileSync(target, 'utf8'), 'untouched');
+  l.reserve('10', meta); assert.equal(fs.readFileSync(target, 'utf8'), '');
 });
 test('terminal append failures warn and retain safe ceiling; reserve failure refuses payment', t => {
   const file = temp(t), l = new PersistentDailyLimiter('100', { file });
@@ -146,11 +147,12 @@ test('SDK preserves unknown outcomes, records signing failure/refusal, and check
 });
 
 test('lock recovery preserves replacements and cleans stale recovery guards', t => {
+  const dead = spawnSync(process.execPath, ['-e', '']);
   const file = temp(t), l = new PersistentDailyLimiter('100', { file });
   const lock = file + '.lock', guard = lock + '.recover';
-  fs.writeFileSync(lock, 'old:0000000000000000');
+  fs.writeFileSync(lock, `${dead.pid}:0000000000000000`);
   fs.utimesSync(lock, 0, 0);
-  fs.writeFileSync(guard, 'old:1111111111111111'); fs.utimesSync(guard, 0, 0);
+  fs.writeFileSync(guard, `${dead.pid}:1111111111111111`); fs.utimesSync(guard, 0, 0);
   l.reserve('10', meta);
   assert.equal(fs.existsSync(lock), false); assert.equal(fs.existsSync(guard), false);
   fs.writeFileSync(lock, 'replacement:2222222222222222'); fs.utimesSync(lock, 0, 0);
@@ -181,7 +183,7 @@ test('lock holders write interoperable unique tokens and preserve replacement on
   const file = temp(t), l = new PersistentDailyLimiter('100', { file });
   const append = l._append.bind(l);
   l._append = row => {
-    assert.match(fs.readFileSync(file + '.lock', 'utf8'), new RegExp(`^${process.pid}:[0-9a-f]{16}$`));
+    assert.match(fs.readFileSync(file + '.lock', 'utf8'), new RegExp(`^${process.pid}:[0-9a-f]{16}:[^:]+$`));
     fs.writeFileSync(file + '.lock', 'replacement');
     append(row);
   };
@@ -214,3 +216,46 @@ test('reservation fsync failure prevents SDK signing', async t => {
   await assert.rejects(() => client.chat({ messages: [{ role: 'user', content: 'test' }], scheme: 'exact' }), /before signing/);
   assert.equal(signed, 0); assert.equal(readSpend(file).payments.length, 0);
 });
+
+for (const guard of [false, true]) {
+  for (const kind of ['dead', 'live', 'foreign', 'empty', 'legacy', 'legacy-token', 'invalid']) {
+    test(`old ${guard ? 'guard' : 'lock'} owner: ${kind}`, t => {
+      const dead = spawnSync(process.execPath, ['-e', '']);
+      assert.equal(dead.status, 0);
+      const host = os.hostname().replaceAll(':', '_');
+      const tokens = { dead: `${dead.pid}:0123456789abcdef:${host}`,
+        live: `${process.pid}:0123456789abcdef:${host}`,
+        foreign: `${dead.pid}:0123456789abcdef:${host}-foreign`, empty: '',
+        legacy: String(dead.pid), 'legacy-token': `${dead.pid}:0123456789abcdef`, invalid: 'broken' };
+      const file = temp(t), l = new PersistentDailyLimiter('100', { file });
+      const lock = file + '.lock', target = guard ? lock + '.recover' : lock;
+      if (guard) { fs.writeFileSync(lock, tokens.dead); fs.utimesSync(lock, 0, 0); }
+      fs.writeFileSync(target, tokens[kind]); fs.utimesSync(target, 0, 0);
+      if (['dead', 'empty', 'legacy', 'legacy-token'].includes(kind)) {
+        l.reserve('10', meta);
+        assert.equal(fs.existsSync(target), false);
+      } else {
+        const now = Date.now(); let calls = 0;
+        t.mock.method(Date, 'now', () => now + (calls++ ? 6000 : 0));
+        assert.throws(() => l.reserve('10', meta), error => {
+          assert.ok(error instanceof SingItPaymentError);
+          assert.ok(error.message.endsWith(` If no other SingIt process is running, delete ${file}.lock.`));
+          return true;
+        });
+        assert.equal(fs.readFileSync(target, 'utf8'), tokens[kind]);
+        assert.equal(readSpend(file).payments.length, 0);
+      }
+    });
+  }
+}
+
+for (const code of ['EPERM', 'EACCES', 'EINVAL']) {
+  test(`owner probe ${code} fails closed`, t => {
+    const file = temp(t), l = new PersistentDailyLimiter('100', { file });
+    const lock = file + '.lock', token = `${process.pid}:0123456789abcdef`;
+    fs.writeFileSync(lock, token); fs.utimesSync(lock, 0, 0);
+    t.mock.method(process, 'kill', () => { throw Object.assign(Error('probe failed'), { code }); });
+    l._recoverLock(lock, token);
+    assert.equal(fs.readFileSync(lock, 'utf8'), token);
+  });
+}

@@ -69,7 +69,17 @@ export function spendSummary({ file = defaultSpendPath(), days = 7, now = () => 
 }
 
 // Tokens are shared with the Python implementation; never release a replacement lock.
-const lockToken = () => `${process.pid}:${randomBytes(8).toString('hex')}`;
+const hostname = () => os.hostname().replaceAll(':', '_');
+const lockToken = () => `${process.pid}:${randomBytes(8).toString('hex')}:${hostname()}`;
+function ownerDead(token) {
+  if (token === '') return true; // Only used after the age check.
+  const match = /^([1-9][0-9]*)(?::[0-9a-f]{16}(?::([^:]+))?)?$/.exec(token);
+  if (!match || match[0] !== token || (match[2] !== undefined && match[2] !== hostname())) return false;
+  const pid = Number(match[1]);
+  if (!Number.isSafeInteger(pid)) return false;
+  try { process.kill(pid, 0); } catch (error) { return error.code === 'ESRCH'; }
+  return false;
+}
 function releaseLock(file, token) {
   try { if (fs.readFileSync(file, 'utf8') === token) fs.unlinkSync(file); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -140,13 +150,13 @@ export class PersistentDailyLimiter {
       try {
         if (Date.now() - fs.lstatSync(guard).mtimeMs > 30000) {
           const stale = fs.readFileSync(guard, 'utf8');
-          releaseLock(guard, stale);
+          if (ownerDead(stale)) releaseLock(guard, stale);
         }
       } catch (e) { if (e.code !== 'ENOENT') throw e; }
       return;
     }
     try {
-      if (fs.readFileSync(lock, 'utf8') === observed && Date.now() - fs.lstatSync(lock).mtimeMs > 30000)
+      if (fs.readFileSync(lock, 'utf8') === observed && Date.now() - fs.lstatSync(lock).mtimeMs > 30000 && ownerDead(observed))
         fs.unlinkSync(lock);
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
     finally { releaseLock(guard, token); }
@@ -162,7 +172,7 @@ export class PersistentDailyLimiter {
           if (Date.now() - fs.lstatSync(lock).mtimeMs > 30000)
             this._recoverLock(lock, fs.readFileSync(lock, 'utf8'));
         } catch { /* vanished or unreadable: retry until the deadline */ }
-        if (Date.now() >= deadline) throw new SingItPaymentError(`Could not lock the spend log ${this.file}.`);
+        if (Date.now() >= deadline) throw new SingItPaymentError(`Could not lock the spend log ${this.file}. If no other SingIt process is running, delete ${this.file}.lock.`);
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15);
       }
     }
