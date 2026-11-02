@@ -144,3 +144,73 @@ test('SDK preserves unknown outcomes, records signing failure/refusal, and check
     assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /not logged|PAYMENT-SIGNATURE/);
   }
 });
+
+test('lock recovery preserves replacements and cleans stale recovery guards', t => {
+  const file = temp(t), l = new PersistentDailyLimiter('100', { file });
+  const lock = file + '.lock', guard = lock + '.recover';
+  fs.writeFileSync(lock, 'old:0000000000000000');
+  fs.utimesSync(lock, 0, 0);
+  fs.writeFileSync(guard, 'old:1111111111111111'); fs.utimesSync(guard, 0, 0);
+  l.reserve('10', meta);
+  assert.equal(fs.existsSync(lock), false); assert.equal(fs.existsSync(guard), false);
+  fs.writeFileSync(lock, 'replacement:2222222222222222'); fs.utimesSync(lock, 0, 0);
+  l._recoverLock(lock, 'observed:3333333333333333');
+  l._releaseLock(lock, 'observed:3333333333333333');
+  assert.equal(fs.readFileSync(lock, 'utf8'), 'replacement:2222222222222222');
+});
+test('fresh lock times out without removing its owner', t => {
+  const file = temp(t), l = new PersistentDailyLimiter('100', { file });
+  fs.writeFileSync(file + '.lock', 'other:0000000000000000');
+  const now = Date.now(); let calls = 0;
+  t.mock.method(Date, 'now', () => now + (calls++ ? 6000 : 0));
+  assert.throws(() => l.reserve('10', meta), /Could not lock the spend log/);
+  assert.equal(fs.readFileSync(file + '.lock', 'utf8'), 'other:0000000000000000');
+});
+test('fsync failures roll back reservations and terminal events', t => {
+  const file = temp(t), l = new PersistentDailyLimiter('100', { file });
+  const r = l.reserve('60', meta);
+  t.mock.method(fs, 'fsyncSync', () => { throw Error('sync failed'); });
+  assert.throws(() => l.reserve('10', meta), /refusing payment before signing/);
+  assert.equal(readSpend(file).payments.length, 1);
+  const warnings = []; t.mock.method(console, 'warn', s => warnings.push(s));
+  l.settle(r, '10', '60');
+  assert.equal(readSpend(file).payments[0].spentAtomic, '60');
+  assert.equal(warnings.length, 1);
+});
+test('lock holders write interoperable unique tokens and preserve replacement on release', t => {
+  const file = temp(t), l = new PersistentDailyLimiter('100', { file });
+  const append = l._append.bind(l);
+  l._append = row => {
+    assert.match(fs.readFileSync(file + '.lock', 'utf8'), new RegExp(`^${process.pid}:[0-9a-f]{16}$`));
+    fs.writeFileSync(file + '.lock', 'replacement');
+    append(row);
+  };
+  l.reserve('10', meta);
+  assert.equal(fs.readFileSync(file + '.lock', 'utf8'), 'replacement');
+});
+test('fresh recovery guard prevents stale main recovery until timeout', t => {
+  const file = temp(t), l = new PersistentDailyLimiter('100', { file });
+  fs.writeFileSync(file + '.lock', 'old'); fs.utimesSync(file + '.lock', 0, 0);
+  fs.writeFileSync(file + '.lock.recover', 'busy');
+  const now = Date.now(); let calls = 0;
+  t.mock.method(Date, 'now', () => now + (calls++ ? 6000 : 0));
+  assert.throws(() => l.reserve('10', meta), /Could not lock the spend log/);
+  assert.equal(fs.readFileSync(file + '.lock', 'utf8'), 'old');
+  assert.equal(fs.readFileSync(file + '.lock.recover', 'utf8'), 'busy');
+});
+test('reservation fsync failure prevents SDK signing', async t => {
+  const { NETWORKS } = await import('../src/pins.js');
+  const file = temp(t), pin = NETWORKS.base;
+  const client = new SingIt({ spendLog: file, network: 'base', maxPerCallUsd: .004, maxPerDayUsd: .006,
+    fetchImpl: async () => new Response('{}', { status: 402, headers: {
+      'payment-required': Buffer.from(JSON.stringify({ x402Version: 2,
+        resource: { url: 'https://ask.singitai.app/v1/chat/completions' }, accepts: [{
+          scheme: 'exact', network: pin.caip, asset: pin.asset, payTo: pin.payTo,
+          amount: '4000', maxTimeoutSeconds: 120,
+        }] })).toString('base64'),
+    } }) });
+  let signed = 0; client._sign = async () => { signed++; return { payload: {} }; };
+  t.mock.method(fs, 'fsyncSync', () => { throw Error('sync failed'); });
+  await assert.rejects(() => client.chat({ messages: [{ role: 'user', content: 'test' }], scheme: 'exact' }), /before signing/);
+  assert.equal(signed, 0); assert.equal(readSpend(file).payments.length, 0);
+});

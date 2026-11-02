@@ -68,12 +68,37 @@ export function spendSummary({ file = defaultSpendPath(), days = 7, now = () => 
   return { file, days: [...groups.values()].sort((a, b) => b.day.localeCompare(a.day) || a.network.localeCompare(b.network) || a.payer.localeCompare(b.payer)), skippedLines };
 }
 
+// Tokens are shared with the Python implementation; never release a replacement lock.
+const lockToken = () => `${process.pid}:${randomBytes(8).toString('hex')}`;
+function releaseLock(file, token) {
+  try { if (fs.readFileSync(file, 'utf8') === token) fs.unlinkSync(file); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
+function createLock(file, token) {
+  const fd = fs.openSync(file, 'wx', 0o600);
+  try { fs.writeFileSync(fd, token); } finally { fs.closeSync(fd); }
+}
+function syncDirectory(dir) {
+  let fd;
+  try { fd = fs.openSync(dir, 'r'); fs.fsyncSync(fd); } catch { /* best effort */ }
+  finally { if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* best effort */ } } }
+}
+
 export class PersistentDailyLimiter {
   constructor(capAtomic, { file = defaultSpendPath(), now = () => new Date(), network = 'base', payer = 'unknown' } = {}) {
     this.capAtomic = BigInt(capAtomic); this.file = file; this.now = now; this.scope = { network, payer };
     try {
-      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-      const fd = fs.openSync(file, 'a+', 0o600); fs.closeSync(fd);
+      const created = fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+      const fd = fs.openSync(file, 'a+', 0o600);
+      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      syncDirectory(path.dirname(file));
+      if (created) {
+        let directory = path.dirname(file);
+        while (directory !== path.dirname(created)) {
+          syncDirectory(path.dirname(directory));
+          directory = path.dirname(directory);
+        }
+      }
       fs.readFileSync(file);
     } catch {
       throw new SingItPaymentError(`Could not prepare spend log ${file}; pass spendLog:false (in-memory, resets on restart) or a writable path.`);
@@ -87,31 +112,63 @@ export class PersistentDailyLimiter {
     const remaining = this.capAtomic - this._spent(new Date(this.now()).toISOString().slice(0, 10), this.scope);
     return remaining > 0n ? remaining : 0n;
   }
+  // Callers hold the main lock, including terminal events, so rollback cannot
+  // truncate another process's append after a write or fsync failure.
   _append(row) {
-    let fd;
+    let fd, size;
     try {
       const line = JSON.stringify(row) + '\n';
       if (Buffer.byteLength(line) >= 4095) throw Error('spend record too large');
       fd = fs.openSync(this.file, 'a+', 0o600);
-      const size = fs.fstatSync(fd).size;
+      size = fs.fstatSync(fd).size;
       const last = Buffer.alloc(1);
       if (size) fs.readSync(fd, last, 0, 1, size - 1);
       const data = (size && last[0] !== 10 ? '\n' : '') + line;
       if (fs.writeSync(fd, data) !== Buffer.byteLength(data)) throw Error('short write');
+      fs.fsyncSync(fd);
+    } catch (error) {
+      if (size !== undefined) { fs.ftruncateSync(fd, size); try { fs.fsyncSync(fd); } catch { /* original failure */ } }
+      throw error;
     } finally { if (fd !== undefined) fs.closeSync(fd); }
   }
-  reserve(amountAtomic, meta = this.scope) {
-    const lock = `${this.file}.lock`;
+  _releaseLock(file, token) { releaseLock(file, token); }
+  _recoverLock(lock, observed) {
+    const guard = `${lock}.recover`, token = lockToken();
+    try { createLock(guard, token); }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      try {
+        if (Date.now() - fs.lstatSync(guard).mtimeMs > 30000) {
+          const stale = fs.readFileSync(guard, 'utf8');
+          releaseLock(guard, stale);
+        }
+      } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      return;
+    }
+    try {
+      if (fs.readFileSync(lock, 'utf8') === observed && Date.now() - fs.lstatSync(lock).mtimeMs > 30000)
+        fs.unlinkSync(lock);
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    finally { releaseLock(guard, token); }
+  }
+  _acquireLock() {
+    const lock = `${this.file}.lock`, token = lockToken();
     const deadline = Date.now() + 5000;
     for (;;) {
-      try { const fd = fs.openSync(lock, 'wx', 0o600); try { fs.writeSync(fd, String(process.pid)); } finally { fs.closeSync(fd); } break; }
+      try { createLock(lock, token); return token; }
       catch (error) {
         if (error.code !== 'EEXIST') throw new SingItPaymentError(`Could not lock the spend log ${this.file}.`);
-        try { if (Date.now() - fs.lstatSync(lock).mtimeMs > 30000) { fs.unlinkSync(lock); continue; } } catch (e) { if (e.code === 'ENOENT') continue; }
+        try {
+          if (Date.now() - fs.lstatSync(lock).mtimeMs > 30000)
+            this._recoverLock(lock, fs.readFileSync(lock, 'utf8'));
+        } catch { /* vanished or unreadable: retry until the deadline */ }
         if (Date.now() >= deadline) throw new SingItPaymentError(`Could not lock the spend log ${this.file}.`);
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15);
       }
     }
+  }
+  reserve(amountAtomic, meta = this.scope) {
+    const lock = `${this.file}.lock`, token = this._acquireLock();
     let row;
     try {
       const t = new Date(this.now()).toISOString();
@@ -125,12 +182,14 @@ export class PersistentDailyLimiter {
     } catch (error) {
       if (error instanceof SingItPaymentError) throw error;
       throw new SingItPaymentError(`Could not reserve in spend log ${this.file}; refusing payment before signing.`);
-    } finally { try { fs.unlinkSync(lock); } catch { /* already removed as stale */ } }
+    } finally { releaseLock(lock, token); }
     let done = false;
     const finish = (event, amount, tx) => {
       if (done) return; done = true;
-      try { this._append({ v: 1, t: new Date(this.now()).toISOString(), day: row.day, id: row.id, event, network: row.network, payer: row.payer, amountAtomic: String(amount), ...(typeof tx === 'string' ? { tx } : {}) }); }
+      let finishToken;
+      try { finishToken = this._acquireLock(); this._append({ v: 1, t: new Date(this.now()).toISOString(), day: row.day, id: row.id, event, network: row.network, payer: row.payer, amountAtomic: String(amount), ...(typeof tx === 'string' ? { tx } : {}) }); }
       catch { console.warn(`Could not append ${event} to spend log ${this.file}; reservation remains counted at its ceiling.`); }
+      finally { if (finishToken) releaseLock(lock, finishToken); }
     };
     const release = () => finish('release', row.amountAtomic);
     release.day = row.day; release.settle = (actual, tx) => finish('settle', actual, tx);
