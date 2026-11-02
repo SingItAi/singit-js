@@ -1,6 +1,5 @@
 // Solana challenge parsing and guard checks only (selectOffer is network-family-agnostic).
-// Signing a real Solana upto/exact payload needs a funded @solana/kit TransactionSigner and a
-// cluster RPC; out of scope for an offline unit test (see README "not supported yet").
+// Real upto/exact signing with a Kit signer and a loopback RPC is covered in solana-sign.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { selectOffer, SingItPaymentError } from "../src/guards.js";
