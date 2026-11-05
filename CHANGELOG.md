@@ -3,7 +3,7 @@
 This repository was split from [SingItAi/SingItAI](https://github.com/SingItAi/SingItAI)
 (`sdk/typescript`) with its history kept.
 
-## Unreleased
+## 0.1.2 - 2026-11-05
 
 - Persistent daily spend limits, enabled by default, shared per wallet and network through a local
   JSON Lines log on one host. Reservations happen before signing; unknown outcomes remain counted
@@ -12,6 +12,8 @@ This repository was split from [SingItAi/SingItAI](https://github.com/SingItAi/S
 - This is a local client-side guard, not on-chain enforcement, a ledger, proof of payment, or
   tamper-proof storage. Other tools and machines bypass it; network filesystems are unsupported.
   Wallet balance, server API-key limits, and the app's on-chain AgentAllowance remain separate.
+- Dependencies: `@x402/core`, `@x402/evm`, `@x402/svm` 2.29.0 and `@solana/kit` 8.6.0, with offline
+  Solana upto/exact signing tests.
 
 ## 0.1.1 - 2026-10-31
 
