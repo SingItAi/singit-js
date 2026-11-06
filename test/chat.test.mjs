@@ -1,6 +1,9 @@
 // End-to-end: SingIt.chat() against a local mock merchant on Base Sepolia (eip155:84532), with a
 // real EIP-712 signature produced by @x402/evm's client schemes and verified by the merchant
 // (test/helpers/merchant.mjs) using viem — no facilitator, no chain, no network access.
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -155,3 +158,56 @@ for (const billed of ["1000", "4001"]) {
     }
   });
 }
+
+const STALE = { error: { type: "invalid_request_error", code: "stale_payment_permit", message: "Stale." } };
+const staleMerchant = body => startMerchant({
+  accepts: () => [exactOffer({ network: NETWORK, asset: ASSET, payTo: PAY_TO, amount: "4000" })],
+  paidResponse: { status: 409, body },
+});
+const hello = [{ role: "user", content: "Hello" }];
+
+test("a stale permit refusal frees the daily reservation and says to wait", async () => {
+  const merchant = await staleMerchant(STALE);
+  try {
+    const client = makeSingIt({ merchant, maxPerCallUsd: 0.004, maxPerDayUsd: 0.006 });
+    const before = client.limiter.remainingAtomic();
+    await assert.rejects(client.chat({ messages: hello, scheme: "exact" }), /stale_payment_permit.*Wait for the previous/s);
+    assert.equal(client.limiter.remainingAtomic(), before);
+  } finally {
+    await merchant.close();
+  }
+});
+
+for (const [name, body] of [
+  ["payment_duplicate", { error: { type: "invalid_request_error", code: "payment_duplicate", message: "Used." } }],
+  ["an unreadable body", "not json"],
+]) {
+  test(`a 409 with ${name} keeps the reservation: it may have settled`, async () => {
+    const merchant = await staleMerchant(body);
+    try {
+      const client = makeSingIt({ merchant, maxPerCallUsd: 0.004, maxPerDayUsd: 0.006 });
+      await assert.rejects(client.chat({ messages: hello, scheme: "exact" }), /HTTP 409.*stays counted/s);
+      assert.equal(client.limiter.remainingAtomic(), 2000n);
+    } finally {
+      await merchant.close();
+    }
+  });
+}
+
+test("the spend log records a stale permit as released, and a new process sees the full cap", async t => {
+  const dir = mkdtempSync(join(tmpdir(), "singit-stale-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "spend.jsonl");
+  const merchant = await staleMerchant(STALE);
+  try {
+    const options = { evmPrivateKey: privateKey, network: "base-sepolia", baseUrl: merchant.url, payTo: PAY_TO,
+      maxPerCallUsd: 0.004, maxPerDayUsd: 0.006, spendLog: file };
+    await assert.rejects(new SingIt(options).chat({ messages: hello, scheme: "exact" }), /stale_payment_permit/);
+    assert.deepEqual(readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line).event), ["reserve", "release"]);
+    // 4000 of 6000 would not fit twice if the first reservation were still counted.
+    await assert.rejects(new SingIt(options).chat({ messages: hello, scheme: "exact" }), /stale_payment_permit/);
+    await assert.rejects(new SingIt(options).chat({ messages: hello, scheme: "exact" }), /stale_payment_permit/);
+  } finally {
+    await merchant.close();
+  }
+});

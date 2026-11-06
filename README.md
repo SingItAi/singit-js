@@ -108,7 +108,7 @@ Every call pins the merchant's offer before signing anything, the same way
 - **Per-day ceiling (`maxPerDayUsd`).** A persistent local log per UTC day and per wallet + network,
   shared by processes using the same file on one host. The worst-case ceiling is reserved before signing;
   `upto` settles down to the billed amount, while `exact` counts the full offer. Unknown outcomes remain
-  counted at their ceiling and are never retried. This is a local client-side guard, not on-chain enforcement.
+  counted at their ceiling and are never retried. A `409 stale_payment_permit` is refused before verification, so its reservation is freed; wait for the previous transaction before calling again. This is a local client-side guard, not on-chain enforcement.
 - **Settlement receipt.** The `payment-response` header's network and payer are checked against
   the request; a mismatch is treated as unresolved rather than returned as a success.
 
