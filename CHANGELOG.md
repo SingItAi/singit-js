@@ -3,14 +3,11 @@
 This repository was split from [SingItAi/SingItAI](https://github.com/SingItAi/SingItAI)
 (`sdk/typescript`) with its history kept.
 
-## Unreleased
+## 0.1.2 - 2026-11-06
 
 - A `409 stale_payment_permit` refusal now frees the reservation, in the spend log too, and the error
   says to wait for the previous transaction. The server refuses it before verifying, so nothing can
   settle; it used to stay counted against the daily cap. Other 409s stay counted, and nothing is retried.
-
-## 0.1.2 - 2026-11-05
-
 - Persistent daily spend limits, enabled by default, shared per wallet and network through a local
   JSON Lines log on one host. Reservations happen before signing; unknown outcomes remain counted
   and are never retried. Disable with `spendLog: false` or choose a writable path.
