@@ -3,6 +3,16 @@
 This repository was split from [SingItAi/SingItAI](https://github.com/SingItAi/SingItAI)
 (`sdk/typescript`) with its history kept.
 
+## 0.2.0 - 2026-11-09
+
+- Optional `limiter`: the 0x address of your SingIt AgentAllowance on Base, sent as
+  `X-SingIt-Limiter`. SingIt Ask then returns what that limiter allows right now in
+  `X-SingIt-Spend-Limit` (remaining today, per-purchase cap, spendable now, and whether
+  each offer fits). The last header is exposed as `singit.lastSpendLimit`.
+- An offer marked `fits: false` is refused before anything is reserved or signed. Offers
+  with `fits: null` (not checked) or a 402 without the header still follow the existing
+  client-side `maxPerCallUsd` / `maxPerDayUsd` guards.
+
 ## 0.1.2 - 2026-11-06
 
 - A `409 stale_payment_permit` refusal now frees the reservation, in the spend log too, and the error

@@ -1,6 +1,6 @@
 {
   "name": "@singitai/sdk",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "SingIt SDK: pay SingIt Ask over x402 with client-side spend limits (per call, per day) enforced before anything is signed. USDC on Base or Solana.",
   "keywords": [
     "singit",
