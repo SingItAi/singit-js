@@ -1,0 +1,65 @@
+{
+  "name": "@singitai/ai-sdk-tools",
+  "version": "0.1.0",
+  "description": "Vercel AI SDK tools for pay-per-answer SingIt chat and web search over x402, with required client-side per-call and per-day spend ceilings.",
+  "keywords": [
+    "singit",
+    "x402",
+    "ai-sdk",
+    "vercel-ai-sdk",
+    "payments",
+    "spend-limits",
+    "usdc"
+  ],
+  "homepage": "https://singitai.app/developers/",
+  "bugs": {
+    "url": "https://github.com/SingItAi/singit-js/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SingItAi/singit-js.git",
+    "directory": "packages/ai-sdk-tools"
+  },
+  "license": "MIT",
+  "author": "SingIt <contact@singitai.app>",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@singitai/sdk": "^0.2.0",
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "ai": ">=5",
+    "viem": ">=2"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "viem": "^2.48.11"
+  }
+}
