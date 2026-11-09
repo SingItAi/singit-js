@@ -1,5 +1,8 @@
 import { NETWORKS, DEFAULT_BASE_URL, DEFAULT_APP_BASE_URL, ROUTE, perModelRoute } from "./pins.js";
-import { SingItPaymentError, selectOffer, decodeHeader, DailyLimiter, usdToAtomic, isAtomicAmount } from "./guards.js";
+import {
+  SingItPaymentError, selectOffer, decodeHeader, DailyLimiter, usdToAtomic, isAtomicAmount, isEvmAddress,
+  spendLimitFromResponse, checkSpendLimit,
+} from "./guards.js";
 import { PersistentDailyLimiter } from "./spend.js";
 import { payerAddress } from "./signers.js";
 import { buildEvmSigner } from "./signers.js";
@@ -51,6 +54,7 @@ export class SingIt {
     const {
       network, baseUrl = DEFAULT_BASE_URL, appBaseUrl = DEFAULT_APP_BASE_URL, payTo, rpcUrl,
       evmPrivateKey, evmAccount, solanaSigner, maxPerCallUsd, maxPerDayUsd, fetchImpl = fetch, spendLog,
+      limiter,
     } = options;
     const pin = NETWORKS[network];
     if (!pin) throw new SingItPaymentError(`Unknown network "${network}". Use "base", "base-sepolia" or "solana".`);
@@ -60,8 +64,15 @@ export class SingIt {
     if (maxPerCallUsd == null || maxPerDayUsd == null) {
       throw new SingItPaymentError("maxPerCallUsd and maxPerDayUsd are required: this SDK never pays without a ceiling.");
     }
+    if (limiter != null && !isEvmAddress(limiter)) {
+      throw new SingItPaymentError("limiter must be the 0x address of a SingIt AgentAllowance limiter on Base.");
+    }
     this.network = network;
     this.pin = pin;
+    // `this.limiter` is the client-side daily counter; the on-chain AgentAllowance address lives here.
+    this.limiterAddress = limiter ?? null;
+    // The spend limit SingIt Ask reported in the last 402 (X-SingIt-Spend-Limit), or null when it sent none.
+    this.lastSpendLimit = null;
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.appBaseUrl = appBaseUrl.replace(/\/$/, "");
     this.payTo = payTo ?? pin.payTo;
@@ -93,6 +104,10 @@ export class SingIt {
     return { x402Version: 2, accepted: offer, payload: signed.payload };
   }
 
+  _limiterHeaders() {
+    return this.limiterAddress ? { "X-SingIt-Limiter": this.limiterAddress } : {};
+  }
+
   /**
    * One OpenAI-shaped chat completion, paid over x402.
    *
@@ -116,7 +131,7 @@ export class SingIt {
     const encodedBody = JSON.stringify(body);
     const send = headers => this.fetchImpl(url, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(90000),
-      headers: { "Content-Type": "application/json", ...headers }, body: encodedBody,
+      headers: { "Content-Type": "application/json", ...this._limiterHeaders(), ...headers }, body: encodedBody,
     });
 
     const first = await send({});
@@ -141,10 +156,14 @@ export class SingIt {
     const header = first.headers.get("payment-required");
     if (!header) throw new SingItPaymentError("Got HTTP 402 with no PAYMENT-REQUIRED header.");
     const challenge = decodeHeader(header);
+    // The server's view of the AgentAllowance limiter, when it sent one (null otherwise, never a stale value).
+    this.lastSpendLimit = spendLimitFromResponse(first);
     const offer = selectOffer(challenge, {
       scheme, networkId: this.pin.caip, family: this.pin.family,
       asset: this.pin.asset, payTo: this.payTo, maxCapAtomic: this.maxPerCallAtomic, resourceUrl: url,
     });
+    // An offer the server marks as not fitting the limiter is refused here, before anything is reserved or signed.
+    checkSpendLimit(this.lastSpendLimit, offer);
 
     const payer = payerAddress({ ...this._evm, solanaSigner: this._solanaSigner, family: this.pin.family });
     const release = this.limiter.reserve(offer.amount, { network: this.network, payer, scheme, resource: url });
@@ -220,6 +239,7 @@ export class SingIt {
       let request = new Request(input, init);
       if (new URL(request.url).origin !== origin) return this.fetchImpl(request);
       request = new Request(request, { redirect: "error" });
+      for (const [name, value] of Object.entries(this._limiterHeaders())) request.headers.set(name, value);
       const first = await this.fetchImpl(request.clone());
       if (first.status !== 402) return first;
       // redirect: "error" so a redirect can never carry PAYMENT-SIGNATURE elsewhere or resend the paid POST.
