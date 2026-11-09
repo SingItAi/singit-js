@@ -29,8 +29,37 @@ export interface SingItOptions {
   maxPerDayUsd: number;
   /** Default/true: persistent local log. String: custom file. False: in-memory, resets on restart. */
   spendLog?: boolean | string;
+  /**
+   * 0x address of your SingIt AgentAllowance limiter on Base. Sent as X-SingIt-Limiter to SingIt Ask; an offer the 402
+   * marks as not fitting it is refused before signing. Covers only this limiter, not other wallets or limits.
+   */
+  limiter?: `0x${string}`;
   fetchImpl?: typeof fetch;
 }
+
+export type SpendLimitReason =
+  | "over_per_purchase_cap" | "over_remaining_today" | "over_allowance_left"
+  | "limiter_paused" | "limiter_expired" | "not_checked";
+
+/** SingIt Ask's X-SingIt-Spend-Limit header: what the AgentAllowance limiter allows right now. */
+export interface SpendLimitInfo {
+  v?: number;
+  limiter?: string;
+  network?: string;
+  asOf?: string;
+  paused?: boolean;
+  expired?: boolean;
+  dailyCapAtomic?: string;
+  perPurchaseCapAtomic?: string;
+  remainingTodayAtomic?: string;
+  allowanceLeftAtomic?: string;
+  spendableNowAtomic?: string;
+  /** Set instead of the figures when the limiter could not be read ("busy", "unreadable", ...). */
+  error?: string;
+  offers?: Array<{ scheme: string; network: string; amountAtomic: string; fits: boolean | null; reason?: SpendLimitReason }>;
+}
+
+export declare function spendLimitFromResponse(response: Response): SpendLimitInfo | null;
 
 export interface ChatOptions {
   /** Model id. Required when route is "per-model"; optional otherwise (server default applies). */
@@ -65,6 +94,10 @@ export declare class SingItPaymentError extends Error {}
 
 export declare class SingIt {
   constructor(options: SingItOptions);
+  /** The limiter option, or null. */
+  readonly limiterAddress: string | null;
+  /** X-SingIt-Spend-Limit from the last 402 this instance answered (also when it then signed), or null. */
+  lastSpendLimit: SpendLimitInfo | null;
   chat(options: ChatOptions): Promise<ChatResult>;
   /**
    * A fetch-compatible function for frameworks that take a custom fetch (LangChain's ChatOpenAI `configuration.fetch`,

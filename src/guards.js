@@ -113,3 +113,33 @@ export const usdToAtomic = usd => {
   }
   return BigInt(Math.round(usd * 1e6)).toString();
 };
+
+export const isEvmAddress = value => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
+
+// What SingIt Ask says an AgentAllowance limiter allows right now: the JSON in a 402's `X-SingIt-Spend-Limit` header,
+// sent only when the unpaid request carried `X-SingIt-Limiter`. Null when the header is absent or unreadable, so an
+// anonymous 402 (or a merchant that never sends it) behaves exactly as before.
+export function spendLimitFromResponse(response) {
+  const value = response?.headers?.get?.("x-singit-spend-limit");
+  if (!value) return null;
+  try {
+    const info = JSON.parse(value);
+    return info && typeof info === "object" && !Array.isArray(info) ? info : null;
+  } catch {
+    return null;
+  }
+}
+
+// Refuses, before anything is reserved or signed, an offer the server has marked as not fitting the limiter. `fits:
+// true` and `fits: null` (not checked, e.g. a Solana offer against a Base limiter) pass; the client-side per-call and
+// per-day ceilings still apply either way.
+export function checkSpendLimit(info, offer) {
+  if (!info || !Array.isArray(info.offers)) return;
+  const refused = info.offers.find(o => o?.fits === false && o.scheme === offer.scheme && o.network === offer.network
+    && String(o.amountAtomic ?? o.amount) === String(offer.amount));
+  if (!refused) return;
+  const figures = ["remainingTodayAtomic", "spendableNowAtomic", "perPurchaseCapAtomic"]
+    .filter(key => info[key] != null).map(key => `${key}=${info[key]}`);
+  throw new SingItPaymentError(`The spending limiter refuses this ${offer.scheme} offer of ${offer.amount} micro-USDC `
+    + `(${refused.reason ?? "does_not_fit"}${figures.length ? `; ${figures.join(", ")}` : ""}); nothing was signed.`);
+}

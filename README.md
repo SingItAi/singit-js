@@ -109,6 +109,16 @@ Every call pins the merchant's offer before signing anything, the same way
   shared by processes using the same file on one host. The worst-case ceiling is reserved before signing;
   `upto` settles down to the billed amount, while `exact` counts the full offer. Unknown outcomes remain
   counted at their ceiling and are never retried. A `409 stale_payment_permit` is refused before verification, so its reservation is freed; wait for the previous transaction before calling again. This is a local client-side guard, not on-chain enforcement.
+- **AgentAllowance limiter (`limiter`, optional).** Pass the 0x address of your SingIt
+  AgentAllowance limiter on Base and every request to SingIt Ask carries `X-SingIt-Limiter`. The
+  402 then reports what that limiter allows right now (`X-SingIt-Spend-Limit`: remaining today,
+  per-purchase cap, spendable now, and whether each offer fits), exposed as `singit.lastSpendLimit`.
+  An offer SingIt marks as not fitting (`fits: false`) is refused before anything is reserved or
+  signed, with the reason (`over_remaining_today`, `over_per_purchase_cap`, ...). Offers marked
+  `fits: null` (not checked, e.g. Solana against a Base limiter) or a 402 without the header proceed
+  under the local ceilings above. This reads only SingIt's own AgentAllowance at the address you
+  supply; it says nothing about other wallets or limits. `allowance(address)` reads the app's
+  reconciliation report instead; `lastSpendLimit` is what Ask reported just before signing.
 - **Settlement receipt.** The `payment-response` header's network and payer are checked against
   the request; a mismatch is treated as unresolved rather than returned as a success.
 
@@ -170,7 +180,10 @@ are separate things.
 - `new SingIt(options)` — `evmPrivateKey | evmAccount` (EVM, viem `Account`), `solanaSigner` (a
   `@solana/kit` `TransactionSigner`, for `network: "solana"`), `network`, `baseUrl` (default
   `https://ask.singitai.app`), `appBaseUrl` (default `https://app.singitai.app`), `payTo`,
-  `rpcUrl`, `maxPerCallUsd`, `maxPerDayUsd` (both required), `spendLog` (default persistence).
+  `rpcUrl`, `maxPerCallUsd`, `maxPerDayUsd` (both required), `spendLog` (default persistence),
+  `limiter` (optional AgentAllowance address on Base, see "Guards").
+- `lastSpendLimit` — the `X-SingIt-Spend-Limit` JSON from the last 402, or `null` when none was sent.
+- `spendLimitFromResponse(response)` (export) — parses that header from any `Response`, or `null`.
 - `chat({ model, messages, max_tokens, scheme, route })` — OpenAI-shaped chat completion.
   `scheme: "upto"` (default) pays only the actual answer cost, up to the offered ceiling;
   `"exact"` pays that ceiling flat. `route: "completions"` (default) calls
